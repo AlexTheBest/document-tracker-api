@@ -1,0 +1,403 @@
+openapi: 3.0.3
+info:
+  title: Document Tracker API
+  description: |
+    API for managing documents with expiry dates. Users can upload PDF documents, 
+    track expiry dates, receive notifications about expiring documents, and archive 
+    expired documents.
+    
+    ## Features
+    - Upload and manage PDF documents
+    - Track document expiry dates
+    - Automatic daily email notifications for expiring/expired documents
+    - Archive expired documents
+    - Secure document downloads
+    - Privacy-focused: users can only access their own documents
+    
+  version: 1.0.0
+  contact:
+    email: support@astalty.com.au
+
+servers:
+  - url: http://api.app.document-tracker.test
+    description: Local development server
+  - url: http://localhost:8000
+    description: Local development server (alternative)
+
+tags:
+  - name: Authentication
+    description: User authentication endpoints
+  - name: Documents
+    description: Document management operations
+
+security:
+  - sanctum: []
+
+paths:
+  /login:
+    post:
+      tags:
+        - Authentication
+      summary: Authenticate user
+      description: Login with email and password to receive an API token
+      operationId: login
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - password
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: user@astalty.com.au
+                password:
+                  type: string
+                  format: password
+                  example: password
+      responses:
+        '200':
+          description: Successful authentication
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+                    example: 1|xxxxxxxxxxxxxxxxxxxxx
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+
+  /api/documents:
+    get:
+      tags:
+        - Documents
+      summary: List all documents
+      description: Get all documents owned by the authenticated user, ordered by expiry date
+      operationId: listDocuments
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Document'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    post:
+      tags:
+        - Documents
+      summary: Create a new document
+      description: Upload a new PDF document with metadata
+      operationId: createDocument
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - name
+                - expires_at
+                - file
+              properties:
+                name:
+                  type: string
+                  maxLength: 255
+                  description: Display name for the document
+                  example: Working With Children Check
+                expires_at:
+                  type: string
+                  format: date
+                  description: Expiry date (must be between tomorrow and 5 years in the future)
+                  example: '2027-02-01'
+                file:
+                  type: string
+                  format: binary
+                  description: PDF file (max 10MB)
+      responses:
+        '201':
+          description: Document created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Document'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+              examples:
+                missingFile:
+                  summary: Missing file
+                  value:
+                    message: The file field is required.
+                    errors:
+                      file:
+                        - The file field is required.
+                pastDate:
+                  summary: Past expiry date
+                  value:
+                    message: The given data was invalid.
+                    errors:
+                      expires_at:
+                        - The expiry date must be in the future.
+                exceedsFiveYears:
+                  summary: Expiry date exceeds 5 years
+                  value:
+                    message: The given data was invalid.
+                    errors:
+                      expires_at:
+                        - The expiry date cannot be more than 5 years in the future.
+
+  /api/documents/{id}:
+    get:
+      tags:
+        - Documents
+      summary: Get document details
+      description: Retrieve details of a specific document
+      operationId: getDocument
+      parameters:
+        - $ref: '#/components/parameters/DocumentId'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Document'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/documents/{id}/download:
+    get:
+      tags:
+        - Documents
+      summary: Download document
+      description: Download the PDF file of a document
+      operationId: downloadDocument
+      parameters:
+        - $ref: '#/components/parameters/DocumentId'
+      responses:
+        '200':
+          description: PDF file download
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          description: File not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                message: File not found
+
+  /api/documents/{id}/archive:
+    post:
+      tags:
+        - Documents
+      summary: Archive document
+      description: |
+        Archive a document. Documents can be archived at any time. 
+        Archived documents are excluded from expiry notifications.
+      operationId: archiveDocument
+      parameters:
+        - $ref: '#/components/parameters/DocumentId'
+      responses:
+        '200':
+          description: Document archived successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Document archived successfully
+                  data:
+                    $ref: '#/components/schemas/Document'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          description: Cannot archive document
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                alreadyArchived:
+                  summary: Already archived
+                  value:
+                    message: Document is already archived
+
+components:
+  securitySchemes:
+    sanctum:
+      type: http
+      scheme: bearer
+      bearerFormat: Token
+      description: |
+        Laravel Sanctum authentication token. Obtain a token by calling the /login endpoint.
+        Include the token in the Authorization header as: Bearer {token}
+
+  parameters:
+    DocumentId:
+      name: id
+      in: path
+      required: true
+      description: Document ID
+      schema:
+        type: integer
+        example: 1
+
+  schemas:
+    Document:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        name:
+          type: string
+          example: Working With Children Check
+        path:
+          type: string
+          example: documents/abc123.pdf
+        expires_at:
+          type: string
+          format: date-time
+          example: '2026-02-10T00:00:00+00:00'
+        archived_at:
+          type: string
+          format: date-time
+          nullable: true
+          example: null
+        is_expired:
+          type: boolean
+          description: Whether the document has passed its expiry date
+          example: false
+        is_expiring_soon:
+          type: boolean
+          description: Whether the document expires within 7 days
+          example: true
+        download_url:
+          type: string
+          format: uri
+          example: http://api.app.document-tracker.test/api/documents/1/download
+        owner:
+          $ref: '#/components/schemas/User'
+        created_at:
+          type: string
+          format: date-time
+          example: '2026-02-01T03:20:00+00:00'
+        updated_at:
+          type: string
+          format: date-time
+          example: '2026-02-01T03:20:00+00:00'
+
+    User:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        name:
+          type: string
+          example: John Doe
+        email:
+          type: string
+          format: email
+          example: user@astalty.com.au
+
+    Error:
+      type: object
+      properties:
+        message:
+          type: string
+          example: An error occurred
+
+    ValidationError:
+      type: object
+      properties:
+        message:
+          type: string
+          example: The given data was invalid.
+        errors:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+          example:
+            file:
+              - The file field is required.
+            expires_at:
+              - The expiry date must be in the future.
+
+  responses:
+    Unauthorized:
+      description: Unauthenticated
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            message: Unauthenticated.
+
+    Forbidden:
+      description: Forbidden - User does not have permission to access this resource
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            message: This action is unauthorized.
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            message: 'No query results for model [App\Models\Document] 123'

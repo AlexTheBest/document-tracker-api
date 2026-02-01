@@ -1,8 +1,11 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Database\Factories;
 
 use App\Models\Document;
+use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
@@ -13,7 +16,7 @@ class DocumentFactory extends Factory
     public function definition(): array
     {
         $fileNames = [
-            'Service Agreement.pdf',
+             'Service Agreement.pdf',
             'Behavior Support Plan.pdf',
             'Client Consent Form.pdf',
             'Employment Contract.pdf',
@@ -39,6 +42,37 @@ class DocumentFactory extends Factory
             'name' => $this->faker->randomElement($fileNames),
             'path' => $this->faker->filePath(),
             'expires_at' => Carbon::now()->addDays(rand(-90, 90)),
+            'owner_id' => User::factory(),
         ];
+    }
+
+    /**
+     * Indicate that the document is expired
+     */
+    public function expired(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'expires_at' => Carbon::now()->subDays(rand(1, 90)),
+        ]);
+    }
+
+    /**
+     * Indicate that the document is expiring soon (within 7 days)
+     */
+    public function expiringSoon(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'expires_at' => Carbon::now()->addDays(rand(1, 7)),
+        ]);
+    }
+
+    /**
+     * Indicate that the document is archived
+     */
+    public function archived(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'archived_at' => Carbon::now(),
+        ]);
     }
 }
